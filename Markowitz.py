@@ -40,6 +40,7 @@ for asset in assets:
     raw = yf.download(asset, start=start, end=end, auto_adjust = False)
     df[asset] = raw['Adj Close']
 
+# Global df_returns definition
 df_returns = df.pct_change().fillna(0)
 
 
@@ -62,7 +63,11 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        # Equal Weight Strategy: 1 / N for all valid assets
+        n_assets = len(assets)
+        if n_assets > 0:
+            w = 1.0 / n_assets
+            self.portfolio_weights[assets] = w
         """
         TODO: Complete Task 1 Above
         """
@@ -113,9 +118,29 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
-
-
-
+        # Iterative approach to ensure exact match with MeanVariance window logic
+        # Start at lookback + 1 to skip the first row (index 0) which contains fillna(0) artifacts
+        # [cite_start]This matches the loop range used in the MeanVariance skeleton provided [cite: 58]
+        for i in range(self.lookback + 1, len(df)):
+            # 1. Get historical returns window (strictly past data)
+            window_returns = df_returns[assets].iloc[i - self.lookback : i]
+            
+            # 2. Calculate Volatility (Standard Deviation)
+            vol = window_returns.std()
+            
+            # 3. Calculate Inverse Volatility (1/sigma)
+            # Add small epsilon to safeguard against division by zero
+            inv_vol = 1.0 / (vol + 1e-8)
+            
+            # 4. Calculate Sum of Inverse Volatilities
+            sum_inv_vol = inv_vol.sum()
+            
+            # 5. Normalize weights
+            weights = inv_vol / sum_inv_vol
+            
+            # Assign weights to the specific date (index i)
+            self.portfolio_weights.loc[df.index[i], assets] = weights
+            
         """
         TODO: Complete Task 2 Above
         """
@@ -187,11 +212,15 @@ class MeanVariancePortfolio:
                 """
                 TODO: Complete Task 3 Below
                 """
+                # Decision Variables: Weights w
+                w = model.addMVar(n, name="w", lb=0.0, ub=1.0)
 
-                # Sample Code: Initialize Decision w and the Objective
-                # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # Objective: Maximize (mu @ w) - (gamma/2) * (w @ Sigma @ w)
+                obj = (mu @ w) - (0.5 * gamma * (w @ Sigma @ w))
+                model.setObjective(obj, gp.GRB.MAXIMIZE)
+                
+                # Constraint: Sum of weights == 1
+                model.addConstr(w.sum() == 1, name="budget")
 
                 """
                 TODO: Complete Task 3 Above
